@@ -72,7 +72,7 @@ if __name__ == '__main__':
 
                 if abs(ok[1][y] - center_freq_cmp_val) < 1e-9:
                     rx_watts = get_watts(ok[0][y])
-                    dist = get_dist(tx_pow,rx_watts,1)
+                    dist = get_dist(tx_pow,rx_watts,args.Transmission_RP_Distance)
                     if int(float(dist)) > int(float(max)):
                         max = float(dist)
                         print("rcv dbm: "+str(ok[0][y]) )
