@@ -30,6 +30,7 @@ def set_vars():
     parser.add_argument("-u","--Update_time", type=int, help="The time between map updates in seconds. (default:10)", default=10)
     #parser.add_argument("-sr", "--Sample_Rate", help="The sample rate of your SDR. (default:auto)", default=None)
     parser.add_argument("-g", "--Gain",type=float, help="SDR Gain. (Automatic if no option provided)", default=None)
+    parser.add_argument("-o", "--Overestimate_Distance",type=float, help="Distance overestimation to make up for inaccurate inverse square law.", default=1.3)
     parser.add_argument("-Txd1", "--Transmission_RP_Distance", type=float,help="Tx reference-point distance, This is how far away you a"
                                                                "re on the first received transmission. This is a const"
                                                                "ant in meters >1. (default:1)", default=1)
@@ -39,12 +40,12 @@ def set_vars():
 if __name__ == '__main__':
     args = set_vars()
     coordinates=[args.Latitude, args.Longitude]
-    mapObj=folium.Map(location=coordinates, zoom_start=20)
+    mapObj=folium.Map(location=coordinates, zoom_start=17)
     mapObj.save('output.html')
     #init_sdr
     sdr = RtlSdr()
     tx_pow = args.Wattage
-    sdr.center_freq = args.Transmission_Frequency*1e7
+    sdr.center_freq = args.Transmission_Frequency*1e6
     center_freq_cmp_val=numpy.float64(sdr.center_freq / 1e6)
     if args.Gain is None:
         sdr.gain= 'auto'
@@ -70,14 +71,15 @@ if __name__ == '__main__':
             pyplot.ylabel('Relative power (dB)')
             for y,x in enumerate(ok[1]):
 
-                if abs(ok[1][y] - center_freq_cmp_val) < 1e-9:
+                if abs(ok[1][y] - center_freq_cmp_val) < 1e-8:
                     rx_watts = get_watts(ok[0][y])
                     dist = get_dist(tx_pow,rx_watts,args.Transmission_RP_Distance)
                     if int(float(dist)) > int(float(max)):
                         max = float(dist)
-                        print("rcv dbm: "+str(ok[0][y]) )
-                        print("rcv wat: "+str(rx_watts))
-                        print("clc dist: "+ str(dist) + "m" )
+
+            print("rcv dbm: "+str(ok[0][y]) )
+            print("rcv wat: "+str(rx_watts))
+            print("clc dist: "+ str(dist * args.Overestimate_Distance) + "m" )
 
         #Ensure you have some kind of actionable data. 
         if max > 20:
@@ -86,5 +88,4 @@ if __name__ == '__main__':
             mapObj.save('output.html')
             pyautogui.hotkey('f5')
         time.sleep(args.Update_time)
-
 
