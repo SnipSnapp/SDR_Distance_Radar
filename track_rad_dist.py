@@ -9,14 +9,6 @@ from rtlsdr import *
 import webbrowser
 import folium
 
-
-
-#gets wattage power from dbm, an unnecessary step and I'm not changing it now.
-def get_watts(dbm):
-    return (10 ** (dbm/ 10))/1000
-#return distance from a src using inverse square law
-def get_dist(I1, I2,d1):
-    return math.sqrt((I1/I2)*(d1**2))
 #args
 def set_vars():
     parser = argparse.ArgumentParser()
@@ -30,6 +22,7 @@ def set_vars():
     parser.add_argument("-u","--Update_time", type=int, help="The time between map updates in seconds. (default:10)", default=10)
     #parser.add_argument("-sr", "--Sample_Rate", help="The sample rate of your SDR. (default:auto)", default=None)
     parser.add_argument("-g", "--Gain",type=float, help="SDR Gain. (Automatic if no option provided)", default=None)
+    parser.add_argument("-o", "--Overestimate_Distance",type=float, help="Distance overestimation to make up for inaccurate inverse square law.", default=1.3)
     parser.add_argument("-Txd1", "--Transmission_RP_Distance", type=float,help="Tx reference-point distance, This is how far away you a"
                                                                "re on the first received transmission. This is a const"
                                                                "ant in meters >1. (default:1)", default=1)
@@ -38,13 +31,22 @@ def set_vars():
 
 if __name__ == '__main__':
     args = set_vars()
+
+
+    #gets wattage power from dbm, an unnecessary step and I'm not changing it now.
+    def get_watts(dbm):
+        return (10 ** (dbm/ 10))/1000
+    #return distance from a src using inverse square law
+    def get_dist(I1, I2,d1):
+        return math.sqrt((I1/I2)*(d1**2)) * args.Overestimate_Distance
+
     coordinates=[args.Latitude, args.Longitude]
-    mapObj=folium.Map(location=coordinates, zoom_start=20)
+    mapObj=folium.Map(location=coordinates, zoom_start=17)
     mapObj.save('output.html')
     #init_sdr
     sdr = RtlSdr()
     tx_pow = args.Wattage
-    sdr.center_freq = args.Transmission_Frequency*1e7
+    sdr.center_freq = args.Transmission_Frequency*1e6
     center_freq_cmp_val=numpy.float64(sdr.center_freq / 1e6)
     if args.Gain is None:
         sdr.gain= 'auto'
@@ -62,29 +64,35 @@ if __name__ == '__main__':
             f.close()
         webbrowser.open('file://' + os.path.realpath("output.html"), new=0)
     #read from SDR.
+    avg_dist = 1
+    circle = folium.Circle(radius=avg_dist, location=coordinates).add_to(mapObj)
     while True:
+        dists = []
         for z in range(100):
             samples = sdr.read_samples(1024)
             ok = pyplot.psd(samples, NFFT=1024, Fs=sdr.sample_rate / 1e6, Fc=sdr.center_freq / 1e6)
             pyplot.xlabel('Frequency (MHz)')
             pyplot.ylabel('Relative power (dB)')
             for y,x in enumerate(ok[1]):
+                rx_watts = get_watts(ok[0][y])
+                dist = get_dist(tx_pow,rx_watts,args.Transmission_RP_Distance)
+                dists.append(dist)
 
-                if abs(ok[1][y] - center_freq_cmp_val) < 1e-9:
-                    rx_watts = get_watts(ok[0][y])
-                    dist = get_dist(tx_pow,rx_watts,args.Transmission_RP_Distance)
-                    if int(float(dist)) > int(float(max)):
-                        max = float(dist)
-                        print("rcv dbm: "+str(ok[0][y]) )
-                        print("rcv wat: "+str(rx_watts))
-                        print("clc dist: "+ str(dist) + "m" )
+        avg_dist = sum(dists) / 100000
+        dists = []
+        if avg_dist > max:
+            max = float(dist)
+
+        print("\nrcv dbm: "+str(ok[0][y]) )
+        print("rcv wat: "+str(rx_watts))
+        print("clc dist: "+ str(avg_dist) + "m\n" )
 
         #Ensure you have some kind of actionable data. 
         if max > 20:
-            folium.Circle(radius=max, location=coordinates).add_to(mapObj)
+            circle.options['radius'] = avg_dist
+            circle.render()
             os.remove(os.path.realpath('output.html'))
             mapObj.save('output.html')
             pyautogui.hotkey('f5')
-        time.sleep(args.Update_time)
-
+            time.sleep(args.Update_time)
 
